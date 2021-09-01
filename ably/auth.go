@@ -104,7 +104,7 @@ func (a *Auth) detectAuthMethod() (int, error) {
 func (a *Auth) ClientID() string {
 	a.mtx.Lock()
 	defer a.mtx.Unlock()
-	if a.clientID != wildcardClientID {
+	if identifiable(a.clientID) {
 		return a.clientID
 	}
 	return ""
@@ -115,15 +115,6 @@ func (a *Auth) updateClientID(clientID string) {
 	defer a.mtx.Unlock()
 	//Spec RSA7b3, RSA7b4, RSA12a,RSA12b, RSA7b2,
 	a.clientID = clientID
-}
-
-func (a *Auth) clientIDForCheck() string {
-	a.mtx.Lock()
-	defer a.mtx.Unlock()
-	if a.method == authBasic {
-		return wildcardClientID // for Basic Auth no ClientID check is performed
-	}
-	return a.clientID
 }
 
 // CreateTokenRequest
@@ -313,11 +304,11 @@ func (a *Auth) authorize(ctx context.Context, tokenParams *TokenParams, authOpts
 		return nil, err
 	}
 
-	// Fail if nonEmpty/NonWildcard a.ClientID doesnt match with tokenDetails/tokenRequest clientID
-	areClientIdsNotEqual := func(clientId1 string, clientId2 string) bool {
-		return areClientIDsNotEmptyOrWildCard(clientId1, clientId2) && clientId1 != clientId2
+	// Fail if identifiable authClientID notEqual to identifiable tokenDetails/tokenRequest clientID
+	notEqual := func(clientId1 string, clientId2 string) bool {
+		return identifiable(clientId1, clientId2) && clientId1 != clientId2
 	}
-	if areClientIdsNotEqual(a.clientID, tokenDetails.ClientID) || areClientIdsNotEqual(tokReqClientID, tokenDetails.ClientID) {
+	if notEqual(a.clientID, tokenDetails.ClientID) || notEqual(tokReqClientID, tokenDetails.ClientID) {
 		a.log().Error("Auth: ", errClientIDMismatch)
 		return nil, newError(ErrInvalidClientID, errClientIDMismatch)
 	}
@@ -524,7 +515,7 @@ func checkIfKeyIsValid(authOptions *authOptions) error {
 	return nil
 }
 
-func areClientIDsNotEmptyOrWildCard(clientIDs ...string) bool {
+func identifiable(clientIDs ...string) bool {
 	for _, s := range clientIDs {
 		switch s {
 		case "", wildcardClientID:
@@ -534,6 +525,15 @@ func areClientIDsNotEmptyOrWildCard(clientIDs ...string) bool {
 	return true
 }
 
-func isClientIDAllowed(clientID, msgClientID string) bool {
-	return clientID == wildcardClientID || msgClientID == "" || clientID == msgClientID
+func (a *Auth) clientIDForMsgCheck() string {
+	a.mtx.Lock()
+	defer a.mtx.Unlock()
+	if a.method == authBasic {
+		return wildcardClientID // for Basic Auth no ClientID check is performed
+	}
+	return a.clientID
+}
+
+func isMsgClientIDAllowed(authClientID, msgClientID string) bool {
+	return authClientID == wildcardClientID || msgClientID == "" || authClientID == msgClientID
 }

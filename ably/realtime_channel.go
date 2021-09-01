@@ -533,11 +533,11 @@ func (c *RealtimeChannel) Publish(ctx context.Context, name string, data interfa
 // returns with an error, but the operation carries on in the background and
 // the channel may eventually be attached and the message published anyway.
 func (c *RealtimeChannel) PublishMultiple(ctx context.Context, messages []*Message) error {
-	clientId := c.client.Auth.clientIDForCheck()
-	for _, v := range messages {
-		if !isClientIDAllowed(clientId, v.ClientID) {
-			// Spec RSL1g3,RSL1g4
-			return fmt.Errorf("unable to publish message containing a clientId (%s) that is incompatible with the library clientId (%s)", v.ClientID, clientId)
+	authClientId := c.client.Auth.clientIDForMsgCheck()
+	for _, message := range messages {
+		if !isMsgClientIDAllowed(authClientId, message.ClientID) {
+			// Spec RSL1g3,RSL1g4, RSA7a1
+			return fmt.Errorf("unable to publish message containing a clientId (%s) that is incompatible with the library clientId (%s)", message.ClientID, authClientId)
 		}
 	}
 	msg := &protocolMessage{

@@ -608,30 +608,30 @@ func (c *Connection) send(msg *protocolMessage, listen chan<- error) {
 // If both user was not authenticated with a wildcard ClientID and the one
 // being sent does not match it, the method return non-nil error.
 func (c *Connection) verifyAndUpdateMessages(msg *protocolMessage) (err error) {
-	clientID := c.auth.clientIDForCheck()
+	authClientID := c.auth.clientIDForMsgCheck()
 	connectionID := c.id
 	switch msg.Action {
 	case actionMessage:
 		for _, msg := range msg.Messages {
-			if !isClientIDAllowed(clientID, msg.ClientID) {
+			if !isMsgClientIDAllowed(authClientID, msg.ClientID) {
 				return newError(90000, fmt.Errorf("unable to send message as %q", msg.ClientID))
 			}
-			if clientID == msg.ClientID {
-				msg.ClientID = ""
+			if authClientID == msg.ClientID {
+				msg.ClientID = "" // RSA7a1
 			}
 			msg.ConnectionID = connectionID
 		}
 	case actionPresence:
-		for _, presmsg := range msg.Presence {
+		for _, presenceMsg := range msg.Presence {
 			switch {
-			case !isClientIDAllowed(clientID, presmsg.ClientID):
-				return newError(90000, fmt.Errorf("unable to send presence message as %q", presmsg.ClientID))
-			case clientID == "" && presmsg.ClientID == "":
+			case !isMsgClientIDAllowed(authClientID, presenceMsg.ClientID):
+				return newError(90000, fmt.Errorf("unable to send presence message as %q", presenceMsg.ClientID))
+			case authClientID == "" && presenceMsg.ClientID == "":
 				return newError(90000, errors.New("unable to infer ClientID from the connection"))
-			case presmsg.ClientID == "":
-				presmsg.ClientID = clientID
+			case presenceMsg.ClientID == "":
+				presenceMsg.ClientID = authClientID
 			}
-			presmsg.ConnectionID = connectionID
+			presenceMsg.ConnectionID = connectionID
 		}
 	}
 	return nil
