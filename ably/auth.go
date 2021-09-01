@@ -189,25 +189,29 @@ func (a *Auth) RequestToken(ctx context.Context, params *TokenParams, opts ...Au
 	return tok, err
 }
 
-func (a *Auth) requestToken(ctx context.Context, params *TokenParams, opts *authOptions) (tok *TokenDetails, tokReqClientID string, err error) {
+func (a *Auth) requestToken(ctx context.Context, tokenParams *TokenParams, authOpts *authOptions) (tok *TokenDetails, tokReqClientID string, err error) {
 	// RSA10e - Use token/tokenDetails as is, if provided
-	if opts != nil && opts.Token != "" {
+	if authOpts != nil && authOpts.Token != "" {
 		a.log().Verbose("Auth: found token in []AuthOption")
-		return newTokenDetails(opts.Token), "", nil
+		return newTokenDetails(authOpts.Token), "", nil
 	}
-	if opts != nil && opts.TokenDetails != nil {
+	if authOpts != nil && authOpts.TokenDetails != nil {
 		a.log().Verbose("Auth: found TokenDetails in []AuthOption")
-		return opts.TokenDetails, "", nil
+		return authOpts.TokenDetails, "", nil
 	}
-	if params == nil {
-		params = a.opts().DefaultTokenParams
+	if tokenParams == nil {
+		tokenParams = a.opts().DefaultTokenParams
 	}
-	opts = a.mergeOpts(opts)
+	// RSA10h, RSA7d - Use auth.ClientID for token auth
+	if empty(tokenParams.ClientID) {
+		tokenParams.ClientID = a.clientID
+	}
+	authOpts = a.mergeOpts(authOpts)
 	var tokReq *TokenRequest
 	switch {
-	case opts.AuthCallback != nil:
+	case authOpts.AuthCallback != nil:
 		a.log().Verbose("Auth: found AuthCallback in []AuthOption")
-		v, err := opts.AuthCallback(context.TODO(), *params)
+		v, err := authOpts.AuthCallback(context.TODO(), *tokenParams)
 		if err != nil {
 			a.log().Error("Auth: failed calling opts.AuthCallback ", err)
 			return nil, "", newError(ErrErrorFromClientTokenCallback, err)
@@ -232,9 +236,9 @@ func (a *Auth) requestToken(ctx context.Context, params *TokenParams, opts *auth
 		default:
 			panic(fmt.Errorf("unhandled TokenLike: %T", v))
 		}
-	case opts.AuthURL != "":
+	case authOpts.AuthURL != "":
 		a.log().Verbose("Auth: found AuthURL in []AuthOption")
-		res, err := a.requestAuthURL(ctx, params, opts)
+		res, err := a.requestAuthURL(ctx, tokenParams, authOpts)
 		if err != nil {
 			a.log().Error("Auth: failed calling requesting token with AuthURL ", err)
 			return nil, "", err
@@ -249,7 +253,7 @@ func (a *Auth) requestToken(ctx context.Context, params *TokenParams, opts *auth
 	default:
 		a.log().Verbose("Auth: using default token request")
 
-		req, err := a.createTokenRequest(params, opts)
+		req, err := a.createTokenRequest(tokenParams, authOpts)
 		if err != nil {
 			return nil, "", err
 		}
@@ -297,15 +301,6 @@ func (a *Auth) authorize(ctx context.Context, tokenParams *TokenParams, authOpts
 		}
 	}
 
-	// RSA10j, don't use defaultTokenParams, since all values should be nil (ttl should also be nil)
-	if tokenParams == nil {
-		tokenParams = &TokenParams{}
-	}
-	// RSA10h, RSA7d - Use auth.ClientID for token auth
-	if empty(tokenParams.ClientID) {
-		tokenParams.ClientID = a.clientID
-	}
-
 	a.log().Info("Auth: sending  token request")
 	tokenDetails, tokReqClientID, err := a.requestToken(ctx, tokenParams, authOpts)
 	if err != nil {
@@ -326,9 +321,11 @@ func (a *Auth) authorize(ctx context.Context, tokenParams *TokenParams, authOpts
 	// RSA10a - use token auth for all future requests
 	a.method = authToken
 
-	// RSA10j, RSA10g - override existing tokenParams and authOptions, ignore timestamp and queryTime
-	tokenParams.Timestamp = 0
-	a.params = tokenParams
+	// RSA10j, RSA10g - if arguments present, override existing tokenParams and authOptions, ignore timestamp and queryTime
+	if tokenParams != nil {
+		tokenParams.Timestamp = 0
+		a.params = tokenParams
+	}
 	if authOpts != nil {
 		authOpts.UseQueryTime = a.opts().UseQueryTime
 		a.opts().authOptions = *authOpts

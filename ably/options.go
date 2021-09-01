@@ -818,6 +818,10 @@ func applyOptionsWithDefaults(opts ...ClientOption) *clientOptions {
 			TTL: int64(60 * time.Minute / time.Millisecond),
 		}
 	}
+	// RSA7a4 - override defaultTokenParams clientID with clientOption.ClientID if not empty
+	if !empty(to.ClientID) {
+		to.DefaultTokenParams.ClientID = to.ClientID
+	}
 
 	if to.LogHandler == nil {
 		to.LogHandler = &stdLogger{Logger: log.New(os.Stderr, "", log.LstdFlags)}
