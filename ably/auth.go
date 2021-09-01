@@ -297,11 +297,11 @@ func (a *Auth) authorize(ctx context.Context, tokenParams *TokenParams, authOpts
 		}
 	}
 
-	// RSA10h - Set auth.ClientID if tokenParams.ClientID is empty
+	// RSA10j, don't use defaultTokenParams, since all values should be nil (ttl should also be nil)
 	if tokenParams == nil {
 		tokenParams = &TokenParams{}
 	}
-	// RSA7d - Use auth.ClientID for token auth
+	// RSA10h, RSA7d - Use auth.ClientID for token auth
 	if empty(tokenParams.ClientID) {
 		tokenParams.ClientID = a.clientID
 	}
