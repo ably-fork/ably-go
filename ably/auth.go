@@ -169,14 +169,14 @@ func (a *Auth) createTokenRequest(tokenParams *TokenParams, authOpts *authOption
 }
 
 // RequestToken
-func (a *Auth) RequestToken(ctx context.Context, params *TokenParams, opts ...AuthOption) (*TokenDetails, error) {
+func (a *Auth) RequestToken(ctx context.Context, tokenParams *TokenParams, authOpts ...AuthOption) (*TokenDetails, error) {
 	a.mtx.Lock()
 	defer a.mtx.Unlock()
-	var o *authOptions
-	if opts != nil {
-		o = applyAuthOptionsWithDefaults(opts...)
+	var opts *authOptions
+	if authOpts != nil {
+		opts = applyAuthOptionsWithDefaults(authOpts...)
 	}
-	tok, _, err := a.requestToken(ctx, params, o)
+	tok, _, err := a.requestToken(ctx, tokenParams, opts)
 	return tok, err
 }
 
@@ -273,14 +273,14 @@ func (a *Auth) requestToken(ctx context.Context, tokenParams *TokenParams, authO
 // authorization token details.
 //
 // Refers to RSA10
-func (a *Auth) Authorize(ctx context.Context, params *TokenParams, setOpts ...AuthOption) (*TokenDetails, error) {
+func (a *Auth) Authorize(ctx context.Context, tokenParams *TokenParams, authOpts ...AuthOption) (*TokenDetails, error) {
 	var opts *authOptions
-	if setOpts != nil {
-		opts = applyAuthOptionsWithDefaults(setOpts...)
+	if authOpts != nil {
+		opts = applyAuthOptionsWithDefaults(authOpts...)
 	}
 	a.mtx.Lock()
 	// RSA10a - create token immediately using forceCreateNewToken
-	token, err := a.authorize(ctx, params, opts, true)
+	token, err := a.authorize(ctx, tokenParams, opts, true)
 	a.mtx.Unlock()
 	if err != nil {
 		return nil, err
