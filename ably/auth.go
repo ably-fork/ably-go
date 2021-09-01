@@ -199,8 +199,13 @@ func (a *Auth) requestToken(ctx context.Context, tokenParams *TokenParams, authO
 		a.log().Verbose("Auth: found TokenDetails in []AuthOption")
 		return authOpts.TokenDetails, "", nil
 	}
+
 	if tokenParams == nil {
 		tokenParams = a.opts().DefaultTokenParams
+		// RSA7a4 - override defaultTokenParams clientID with a.ClientID if not empty
+		if !empty(a.clientID) {
+			tokenParams.ClientID = a.clientID
+		}
 	}
 	// RSA10h, RSA7d - Use auth.ClientID for token auth
 	if empty(tokenParams.ClientID) {
@@ -308,8 +313,7 @@ func (a *Auth) authorize(ctx context.Context, tokenParams *TokenParams, authOpts
 		return nil, err
 	}
 
-	// Fail if the non-empty ClientID, that was set explicitly via clientOptions, does
-	// not match the non-wildcard ClientID returned with the token/tokenRequest
+	// Fail if nonEmpty/NonWildcard a.ClientID doesnt match with tokenDetails/tokenRequest clientID
 	areClientIdsNotEqual := func(clientId1 string, clientId2 string) bool {
 		return areClientIDsNotEmptyOrWildCard(clientId1, clientId2) && clientId1 != clientId2
 	}
@@ -317,6 +321,9 @@ func (a *Auth) authorize(ctx context.Context, tokenParams *TokenParams, authOpts
 		a.log().Error("Auth: ", errClientIDMismatch)
 		return nil, newError(ErrInvalidClientID, errClientIDMismatch)
 	}
+
+	// RSA12a, RSA7b2 - set clientID as per tokenDetails, can be null/non-null/wildcard
+	a.updateClientID(tokenDetails.ClientID)
 
 	// RSA10a - use token auth for all future requests
 	a.method = authToken
@@ -332,8 +339,6 @@ func (a *Auth) authorize(ctx context.Context, tokenParams *TokenParams, authOpts
 	}
 	a.opts().TokenDetails = tokenDetails
 
-	// RSA7b2
-	a.clientID = tokenDetails.ClientID
 	return tokenDetails, nil
 }
 
