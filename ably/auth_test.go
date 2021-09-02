@@ -89,7 +89,7 @@ func timeWithin(t, start, end time.Time) error {
 	return nil
 }
 
-func TestAuth_TokenAuth(t *testing.T) {
+func TestAuth_TokenAuth_RSA5(t *testing.T) {
 	t.Parallel()
 	rec, extraOpt := recorder()
 	defer rec.Stop()
@@ -134,6 +134,7 @@ func TestAuth_TokenAuth(t *testing.T) {
 	now := time.Now().Add(time.Second)
 	err = timeWithin(tok.IssueTime(), beforeAuth, now)
 	assertNil(t, err)
+
 	// Ensure token expires in 60m (default TTL).
 	beforeAuth = beforeAuth.Add(60 * time.Minute)
 	now = now.Add(60 * time.Minute)
@@ -247,6 +248,7 @@ func TestAuth_RSA10(t *testing.T) {
 			ably.WithEnvironment(ablytest.Environment),
 			ably.WithTLS(false),
 			ably.WithUseTokenAuth(true),
+			ably.WithKey("fake:key"), //provide token
 		}
 
 		client, err := ably.NewREST(opts...)

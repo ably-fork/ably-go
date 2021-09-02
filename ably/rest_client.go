@@ -702,7 +702,7 @@ func (c *REST) newHTTPRequest(ctx context.Context, r *request) (*http.Request, e
 	}
 	if !r.NoAuth {
 		//spec RSC19b
-		if err := c.Auth.authReq(req); err != nil {
+		if err := c.Auth.setHttpAuthRequestHeader(req); err != nil {
 			return nil, err
 		}
 	}

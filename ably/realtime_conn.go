@@ -247,7 +247,7 @@ func (c *Connection) params(mode connectionMode) (url.Values, error) {
 	for k, v := range c.opts.TransportParams {
 		query[k] = v
 	}
-	if err := c.auth.authQuery(context.Background(), query); err != nil {
+	if err := c.auth.setRealtimeAuthQueryParams(context.Background(), query); err != nil {
 		return nil, err
 	}
 	switch mode {
@@ -765,8 +765,11 @@ func (c *Connection) eventloop() {
 				connDetails = msg.ConnectionDetails
 				c.key = connDetails.ConnectionKey //(RTN15e) (RTN16d)
 				c.connStateTTL = connDetails.ConnectionStateTTL
-				// Spec RSA7b3, RSA7b4, RSA12a
-				c.auth.updateClientID(connDetails.ClientID)
+				// Spec RSA7b3, RSA7b4, RSA12a, RSA15b - set clientID as per connectionDetails, can be null/non-null/wildcard (unidentified)
+				if err := c.auth.updateClientID(connDetails.ClientID); err != nil {
+					c.lockSetState(ConnectionStateFailed, err, 0)
+					return
+				}
 			}
 			reconnecting := c.reconnecting
 			if reconnecting {

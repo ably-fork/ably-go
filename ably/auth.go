@@ -87,7 +87,13 @@ func newAuth(client *REST) (*Auth, error) {
 func (a *Auth) detectAuthMethod() (int, error) {
 	opts := a.opts()
 	// Checks for token auth (also check if external token auth ways provided)
-	if opts.UseTokenAuth || opts.Token != "" || opts.TokenDetails != nil || opts.AuthCallback != nil || opts.AuthURL != "" {
+	if opts.UseTokenAuth {
+		if opts.Token != "" || opts.TokenDetails != nil || opts.AuthCallback != nil || opts.AuthURL != "" { // RSA3a - No need for http/https check
+			return authToken, nil
+		}
+		if err := checkIfKeyIsValid(&opts.authOptions); err != nil { // RSA14 - cannot create token without valid key
+			return 0, err
+		}
 		return authToken, nil
 	}
 	// checks for basic auth
@@ -110,11 +116,16 @@ func (a *Auth) ClientID() string {
 	return ""
 }
 
-func (a *Auth) updateClientID(clientID string) {
+func (a *Auth) updateClientID(clientID string) error {
 	a.mtx.Lock()
 	defer a.mtx.Unlock()
-	//Spec RSA7b3, RSA7b4, RSA12a,RSA12b, RSA7b2,
+	if notCompatible(a.clientID, clientID) { // RSA15A, RSA15c - check if ids are compatible, else return error
+		a.log().Error("Auth: ", errClientIDMismatch)
+		return newError(ErrInvalidClientID, errClientIDMismatch)
+	}
+	//Spec RSA7b3, RSA7b4, RSA12a,RSA12b, RSA7b2, RSA15a
 	a.clientID = clientID
+	return nil
 }
 
 // CreateTokenRequest
@@ -304,17 +315,15 @@ func (a *Auth) authorize(ctx context.Context, tokenParams *TokenParams, authOpts
 		return nil, err
 	}
 
-	// Fail if identifiable authClientID notEqual to identifiable tokenDetails/tokenRequest clientID
-	notEqual := func(clientId1 string, clientId2 string) bool {
-		return identifiable(clientId1, clientId2) && clientId1 != clientId2
-	}
-	if notEqual(a.clientID, tokenDetails.ClientID) || notEqual(tokReqClientID, tokenDetails.ClientID) {
+	// RSA15c - tokenRequest clientID should be equal to tokenDetails clientID
+	if notCompatible(tokReqClientID, tokenDetails.ClientID) { // RSA15a
 		a.log().Error("Auth: ", errClientIDMismatch)
 		return nil, newError(ErrInvalidClientID, errClientIDMismatch)
 	}
-
-	// RSA12a, RSA7b2 - set clientID as per tokenDetails, can be null/non-null/wildcard
-	a.updateClientID(tokenDetails.ClientID)
+	// RSA12a, RSA7b2, RSA15b - set clientID as per tokenDetails, can be null/non-null/wildcard (unidentified)
+	if err := a.updateClientID(tokenDetails.ClientID); err != nil {
+		return nil, err
+	}
 
 	// RSA10a - use token auth for all future requests
 	a.method = authToken
@@ -464,11 +473,11 @@ func (a *Auth) newError(code ErrorCode, err error) error {
 	return newError(code, err)
 }
 
-func (a *Auth) authReq(req *http.Request) error {
+func (a *Auth) setHttpAuthRequestHeader(req *http.Request) error {
 	switch a.method {
 	case authBasic:
 		req.SetBasicAuth(a.opts().KeyName(), a.opts().KeySecret())
-	case authToken:
+	case authToken: // RSA3b
 		if _, err := a.authorize(req.Context(), a.params, nil, false); err != nil {
 			return err
 		}
@@ -478,13 +487,13 @@ func (a *Auth) authReq(req *http.Request) error {
 	return nil
 }
 
-func (a *Auth) authQuery(ctx context.Context, query url.Values) error {
+func (a *Auth) setRealtimeAuthQueryParams(ctx context.Context, query url.Values) error {
 	a.mtx.Lock()
 	defer a.mtx.Unlock()
 	switch a.method {
 	case authBasic:
 		query.Set("key", a.opts().Key)
-	case authToken:
+	case authToken: // RSA3c
 		if _, err := a.authorize(ctx, a.params, nil, false); err != nil {
 			return err
 		}
@@ -513,6 +522,11 @@ func checkIfKeyIsValid(authOptions *authOptions) error {
 		return newError(ErrIncompatibleCredentials, errInvalidKey)
 	}
 	return nil
+}
+
+// RSA15a - identifiable client ID should match with each other
+func notCompatible(clientId1 string, clientId2 string) bool {
+	return identifiable(clientId1, clientId2) && clientId1 != clientId2
 }
 
 func identifiable(clientIDs ...string) bool {

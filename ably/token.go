@@ -10,9 +10,9 @@ import (
 	"time"
 )
 
-// TokenParams
+// TokenParams - Used for requesting a TokenDetails/Token
 type TokenParams struct {
-	// TTL is a requested time to live for the token. If the token request
+	// TTL is a requested time (in ms) to live for the token. If the token request
 	// is successful, the TTL of the returned token will be less than or equal
 	// to this value depending on application settings and the attributes
 	// of the issuing key.
