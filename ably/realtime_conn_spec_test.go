@@ -3047,7 +3047,7 @@ func TestRealtimeConn_RTN19a(t *testing.T) {
 	}
 }
 
-func TestRealtimeConn_RTN24_RTN21_RTC8a_RTN4h_Override_ConnectionDetails_On_Connected(t *testing.T) {
+func TestRealtimeConn_RTN24_RTN21_RTC8a_RTN4h_RSA15b_Override_ConnectionDetails_On_Connected(t *testing.T) {
 	t.Parallel()
 
 	in := make(chan *ably.ProtocolMessage, 1)
@@ -3060,7 +3060,7 @@ func TestRealtimeConn_RTN24_RTN21_RTC8a_RTN4h_Override_ConnectionDetails_On_Conn
 	)
 
 	connDetails := ably.ConnectionDetails{
-		ClientID:           "id1",
+		ClientID:           "",
 		ConnectionKey:      "foo",
 		MaxFrameSize:       12,
 		MaxInboundRate:     14,
@@ -3076,12 +3076,10 @@ func TestRealtimeConn_RTN24_RTN21_RTC8a_RTN4h_Override_ConnectionDetails_On_Conn
 	}
 
 	err := ablytest.Wait(ablytest.ConnWaiter(c, c.Connect, ably.ConnectionEventConnected), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	assertNil(t, err)
 
 	newConnDetails := ably.ConnectionDetails{
-		ClientID:           "id2",
+		ClientID:           "id1",
 		ConnectionKey:      "bar",
 		MaxFrameSize:       13,
 		MaxInboundRate:     15,
@@ -3112,36 +3110,40 @@ func TestRealtimeConn_RTN24_RTN21_RTC8a_RTN4h_Override_ConnectionDetails_On_Conn
 	ablytest.Instantly.Recv(t, &newConnectionState, changes, t.Fatalf)
 
 	// RTN4h - can emit UPDATE event
-	if expected, got := ably.ConnectionEventUpdate, newConnectionState.Event; expected != got {
-		t.Fatalf("expected %v; got %v (event: %+v)", expected, got, newConnectionState)
-	}
-	if expected, got := ably.ConnectionStateConnected, newConnectionState.Current; expected != got {
-		t.Fatalf("expected %v; got %v (event: %+v)", expected, got, newConnectionState)
-	}
-	if expected, got := ably.ConnectionStateConnected, newConnectionState.Previous; expected != got {
-		t.Fatalf("expected %v; got %v (event: %+v)", expected, got, newConnectionState)
-	}
+	assertEquals(t, ably.ConnectionEventUpdate, newConnectionState.Event)
+	assertEquals(t, ably.ConnectionStateConnected, newConnectionState.Current)
+	assertEquals(t, ably.ConnectionStateConnected, newConnectionState.Previous)
+	assertEquals(t, ably.ConnectionEventUpdate, newConnectionState.Event)
 	if got := fmt.Sprint(newConnectionState.Reason); !strings.Contains(got, errInfo.Message) {
 		t.Fatalf("expected %+v; got %v (error: %+v)", errInfo, got, newConnectionState.Reason)
 	}
 	if got := c.Connection.ErrorReason().Message(); !strings.Contains(got, errInfo.Message) {
 		t.Fatalf("expected %+v; got %v (error: %+v)", errInfo, got, c.Connection.ErrorReason().Message())
 	}
+
 	// RTN21 - new connection details over write old values
-	if c.Connection.Key() != newConnDetails.ConnectionKey {
-		t.Fatalf("expected %v; got %v", newConnDetails.ConnectionKey, c.Connection.Key())
+	assertEquals(t, newConnDetails.ConnectionKey, c.Connection.Key())
+	assertEquals(t, newConnDetails.ClientID, c.Auth.ClientID())
+	assertEquals(t, time.Duration(newConnDetails.ConnectionStateTTL), c.Connection.ConnectionStateTTL())
+	assertEquals(t, "connection-id-2", c.Connection.ID())
+
+	// Should fail with new client ID since they are not compatible
+	newConnDetails.ClientID = "id2"
+	in <- &ably.ProtocolMessage{
+		Action:            ably.ActionConnected,
+		ConnectionID:      "connection-id-2",
+		ConnectionDetails: &newConnDetails,
+		Error:             &errInfo,
 	}
 
-	if c.Auth.ClientID() != newConnDetails.ClientID {
-		t.Fatalf("expected %v; got %v", newConnDetails.ClientID, c.Auth.ClientID())
+	ablytest.Instantly.Recv(t, &newConnectionState, changes, t.Fatalf)
+	assertEquals(t, ably.ConnectionEventFailed, newConnectionState.Event)
+	errMessage := "the received ClientID does not match the requested one"
+	if got := fmt.Sprint(newConnectionState.Reason); !strings.Contains(got, errMessage) {
+		t.Fatalf("expected %+v; got %v (error: %+v)", errMessage, got, newConnectionState.Reason)
 	}
-
-	if c.Connection.ConnectionStateTTL() != time.Duration(newConnDetails.ConnectionStateTTL) {
-		t.Fatalf("expected %v; got %v", newConnDetails.ConnectionStateTTL, c.Connection.ConnectionStateTTL())
-	}
-
-	if c.Connection.ID() != "connection-id-2" {
-		t.Fatalf("expected %v; got %v", "connection-id-2", c.Connection.ID())
+	if got := c.Connection.ErrorReason().Message(); !strings.Contains(got, errMessage) {
+		t.Fatalf("expected %+v; got %v (error: %+v)", errMessage, got, c.Connection.ErrorReason().Message())
 	}
 }
 

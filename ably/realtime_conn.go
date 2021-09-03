@@ -768,6 +768,7 @@ func (c *Connection) eventloop() {
 				// Spec RSA7b3, RSA7b4, RSA12a, RSA15b - set clientID as per connectionDetails, can be null/non-null/wildcard (unidentified)
 				if err := c.auth.updateClientID(connDetails.ClientID); err != nil {
 					c.lockSetState(ConnectionStateFailed, err, 0)
+					c.mtx.Unlock()
 					return
 				}
 			}

@@ -86,11 +86,11 @@ func newAuth(client *REST) (*Auth, error) {
 //detectAuthMethod - returns authBasic or authToken with valid checks
 func (a *Auth) detectAuthMethod() (int, error) {
 	opts := a.opts()
-	// Checks for token auth (also check if external token auth ways provided)
+	// check if external token auth ways provided
+	if opts.Token != "" || opts.TokenDetails != nil || opts.AuthCallback != nil || opts.AuthURL != "" { // RSA3a - No need for http/https check
+		return authToken, nil
+	}
 	if opts.UseTokenAuth {
-		if opts.Token != "" || opts.TokenDetails != nil || opts.AuthCallback != nil || opts.AuthURL != "" { // RSA3a - No need for http/https check
-			return authToken, nil
-		}
 		if err := checkIfKeyIsValid(&opts.authOptions); err != nil { // RSA14 - cannot create token without valid key
 			return 0, err
 		}
@@ -119,6 +119,10 @@ func (a *Auth) ClientID() string {
 func (a *Auth) updateClientID(clientID string) error {
 	a.mtx.Lock()
 	defer a.mtx.Unlock()
+	return a.lockUpdateClientID(clientID)
+}
+
+func (a *Auth) lockUpdateClientID(clientID string) error {
 	if notCompatible(a.clientID, clientID) { // RSA15A, RSA15c - check if ids are compatible, else return error
 		a.log().Error("Auth: ", errClientIDMismatch)
 		return newError(ErrInvalidClientID, errClientIDMismatch)
@@ -321,7 +325,7 @@ func (a *Auth) authorize(ctx context.Context, tokenParams *TokenParams, authOpts
 		return nil, newError(ErrInvalidClientID, errClientIDMismatch)
 	}
 	// RSA12a, RSA7b2, RSA15b - set clientID as per tokenDetails, can be null/non-null/wildcard (unidentified)
-	if err := a.updateClientID(tokenDetails.ClientID); err != nil {
+	if err := a.lockUpdateClientID(tokenDetails.ClientID); err != nil {
 		return nil, err
 	}
 
