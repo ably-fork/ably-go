@@ -736,15 +736,13 @@ func TestAuth_ClientID_RSA7(t *testing.T) {
 	client := app.NewRealtime(opts...) // no client.Close as the connection is mocked
 
 	tok, err := client.Auth.RequestToken(context.Background(), params)
-	if err != nil {
-		t.Fatalf("RequestToken()=%v", err)
-	}
+	assertNil(t, err)
+
 	proxy.TokenQueue = append(proxy.TokenQueue, tok)
 
 	tok, err = client.Auth.Authorize(context.Background(), nil)
-	if err != nil {
-		t.Fatalf("Authorize()=%v", err)
-	}
+	assertNil(t, err)
+
 	connected := &ably.ProtocolMessage{
 		Action:       ably.ActionConnected,
 		ConnectionID: "connection-id",
@@ -754,25 +752,19 @@ func TestAuth_ClientID_RSA7(t *testing.T) {
 	}
 	// Ensure CONNECTED message changes the empty Auth.ClientID.
 	in <- connected
-	if id := client.Auth.ClientID(); id != "" {
-		t.Fatalf("want clientID to be empty; got %q", id)
-	}
-	if err := ablytest.Wait(ablytest.ConnWaiter(client, client.Connect, ably.ConnectionEventConnected), nil); err != nil {
-		t.Fatalf("Connect()=%v", err)
-	}
-	if id := client.Auth.ClientID(); id != connected.ConnectionDetails.ClientID {
-		t.Fatalf("want clientID=%q; got %q", connected.ConnectionDetails.ClientID, id)
-	}
+	id := client.Auth.ClientID()
+	assertEmpty(t, id)
+	err = ablytest.Wait(ablytest.ConnWaiter(client, client.Connect, ably.ConnectionEventConnected), nil)
+	assertNil(t, err)
+	assertEquals(t, connected.ConnectionDetails.ClientID, client.Auth.ClientID())
 	// Mock the auth reverse proxy to return a token with non-matching ClientID
 	// via AuthURL.
 	tok.ClientID = "non-matching"
 	proxy.TokenQueue = append(proxy.TokenQueue, tok)
 
 	_, err = client.Auth.Authorize(context.Background(), nil)
-	if err := checkError(40012, err); err != nil {
-		t.Fatal(err)
-	}
-
+	err = checkError(40012, err)
+	assertNil(t, err)
 	// After the current token expires, reconnecting should request a new token
 	// from authURL. Make it return the token with the mismatched client ID, and
 	// expect a transition to FAILED.
@@ -791,9 +783,7 @@ func TestAuth_ClientID_RSA7(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 
 		err = ablytest.Wait(ablytest.ConnWaiter(client, client.Close, ably.ConnectionEventClosing), nil)
-		if err != nil {
-			t.Fatalf("Close()=%v", err)
-		}
+		assertNil(t, err)
 
 		err = ablytest.Wait(ablytest.ConnWaiter(client, func() {
 			closed := &ably.ProtocolMessage{
@@ -801,9 +791,7 @@ func TestAuth_ClientID_RSA7(t *testing.T) {
 			}
 			in <- closed
 		}, ably.ConnectionEventClosed), nil)
-		if err != nil {
-			t.Fatalf("waiting for close: %v", err)
-		}
+		assertNil(t, err)
 
 		in <- connected
 		proxy.TokenQueue = append(proxy.TokenQueue, tok)
@@ -812,12 +800,20 @@ func TestAuth_ClientID_RSA7(t *testing.T) {
 			ably.ConnectionEventFailed,
 		), nil)
 	}
-	if err = checkError(40012, err); err != nil {
-		t.Fatal(err)
-	}
-	if state := client.Connection.State(); state != ably.ConnectionStateFailed {
-		t.Fatalf("want state=%q; got %q", ably.ConnectionStateFailed, state)
-	}
+	err = checkError(40012, err)
+	assertNil(t, err)
+	assertEquals(t, ably.ConnectionStateFailed, client.Connection.State())
+
+	t.Run("RSA7c: error on providing wildcard clientID in clientOptions", func(t *testing.T) {
+		t.Parallel()
+		app := ablytest.MustSandbox(nil)
+		defer safeclose(t, app)
+		opts := app.Options()
+		opts = append(opts, ably.WithClientID("*"))
+		_, err := ably.NewREST(opts...)
+		err = checkError(40102, err)
+		assertNil(t, err)
+	})
 }
 
 func TestAuth_CreateTokenRequest(t *testing.T) {
@@ -931,17 +927,5 @@ func TestAuth_RealtimeAccessToken(t *testing.T) {
 				t.Fatalf("want ClientID to be empty; got %q", msg.ClientID)
 			}
 		}
-	}
-}
-
-func TestAuth_RSA7c(t *testing.T) {
-	t.Parallel()
-	app := ablytest.MustSandbox(nil)
-	defer safeclose(t, app)
-	opts := app.Options()
-	opts = append(opts, ably.WithClientID("*"))
-	_, err := ably.NewREST(opts...)
-	if err == nil {
-		t.Error("expected an error")
 	}
 }
