@@ -87,7 +87,7 @@ func Test_RTN2_WebsocketQueryParams(t *testing.T) {
 		t.Parallel()
 		token := "fake:clientToken"
 		requestParams := setup(ably.WithToken(token))
-		actualToken := requestParams["access_token"]
+		actualToken := requestParams["accessToken"]
 		assertDeepEquals(t, []string{token}, actualToken)
 
 		key := "fake:key"
@@ -2128,7 +2128,7 @@ func TestRealtimeConn_RTN15h2_ReauthWithBadToken(t *testing.T) {
 	var dialURL *url.URL
 	ablytest.Instantly.Recv(t, &dialURL, dials, t.Fatalf)
 
-	if expected, got := "bad:token", dialURL.Query().Get("access_token"); expected != got {
+	if expected, got := "bad:token", dialURL.Query().Get("accessToken"); expected != got {
 		t.Errorf("expected reauthorization with token returned by the authCallback; got %q", got)
 	}
 
@@ -2207,7 +2207,7 @@ func TestRealtimeConn_RTN15h2_Success(t *testing.T) {
 	var dialURL *url.URL
 	ablytest.Instantly.Recv(t, &dialURL, dials, t.Fatalf)
 
-	if expected, got := "good:token", dialURL.Query().Get("access_token"); expected != got {
+	if expected, got := "good:token", dialURL.Query().Get("accessToken"); expected != got {
 		t.Errorf("expected reauthorization with token returned by the authCallback; got %q", got)
 	}
 

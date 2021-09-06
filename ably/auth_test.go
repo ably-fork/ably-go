@@ -917,8 +917,8 @@ func TestAuth_RealtimeAccessToken(t *testing.T) {
 		t.Fatal("want urls to be non-empty")
 	}
 	for _, url := range urls {
-		if s := url.Query().Get("access_token"); s == "" {
-			t.Errorf("missing access_token param in %q", url)
+		if s := url.Query().Get("accessToken"); s == "" {
+			t.Errorf("missing accessToken param in %q", url)
 		}
 	}
 	for _, msg := range rec.Sent() {

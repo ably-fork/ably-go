@@ -96,13 +96,14 @@ func (a *Auth) detectAuthMethod() (int, error) {
 		}
 		return authToken, nil
 	}
-	// checks for basic auth
+	// RSA11- Basic auth uses valid key
 	if err := checkIfKeyIsValid(&opts.authOptions); err != nil {
 		return 0, err
 	}
-	if opts.NoTLS {
+	if opts.NoTLS { // RSA1, RSA18 - Basic auth over HTTP is not allowed
 		return 0, newError(ErrInvalidUseOfBasicAuthOverNonTLSTransport, errInsecureBasicAuth)
 	}
+	// RSA2 - fallback to authBasic as default auth scheme
 	return authBasic, nil
 }
 
@@ -123,7 +124,7 @@ func (a *Auth) updateClientID(clientID string) error {
 }
 
 func (a *Auth) lockUpdateClientID(clientID string) error {
-	if notCompatible(a.clientID, clientID) { // RSA15A, RSA15c - check if ids are compatible, else return error
+	if !compatible(a.clientID, clientID) { // RSA15A, RSA15c - check if ids are compatible, else return error
 		a.log().Error("Auth: ", errClientIDMismatch)
 		return newError(ErrInvalidClientID, errClientIDMismatch)
 	}
@@ -320,7 +321,7 @@ func (a *Auth) authorize(ctx context.Context, tokenParams *TokenParams, authOpts
 	}
 
 	// RSA15c - tokenRequest clientID should be equal to tokenDetails clientID
-	if notCompatible(tokReqClientID, tokenDetails.ClientID) { // RSA15a
+	if !compatible(tokReqClientID, tokenDetails.ClientID) { // RSA15a
 		a.log().Error("Auth: ", errClientIDMismatch)
 		return nil, newError(ErrInvalidClientID, errClientIDMismatch)
 	}
@@ -477,9 +478,10 @@ func (a *Auth) newError(code ErrorCode, err error) error {
 	return newError(code, err)
 }
 
+//setHttpAuthRequestHeader - Depending on the authentication scheme, HTTP header has either basic key:secret/username:password or bearer token authentication
 func (a *Auth) setHttpAuthRequestHeader(req *http.Request) error {
 	switch a.method {
-	case authBasic:
+	case authBasic: // RSA11
 		req.SetBasicAuth(a.opts().KeyName(), a.opts().KeySecret())
 	case authToken: // RSA3b
 		if _, err := a.authorize(req.Context(), a.params, nil, false); err != nil {
@@ -491,17 +493,18 @@ func (a *Auth) setHttpAuthRequestHeader(req *http.Request) error {
 	return nil
 }
 
+//setRealtimeAuthQueryParams - (RTN2e) Depending on the authentication scheme, realtime connection params has either accessToken containing token string, or key containing the API key
 func (a *Auth) setRealtimeAuthQueryParams(ctx context.Context, query url.Values) error {
 	a.mtx.Lock()
 	defer a.mtx.Unlock()
 	switch a.method {
-	case authBasic:
+	case authBasic: // RTN2e
 		query.Set("key", a.opts().Key)
 	case authToken: // RSA3c
 		if _, err := a.authorize(ctx, a.params, nil, false); err != nil {
 			return err
 		}
-		query.Set("access_token", a.token().Token)
+		query.Set("accessToken", a.token().Token)
 	}
 	return nil
 }
@@ -528,9 +531,9 @@ func checkIfKeyIsValid(authOptions *authOptions) error {
 	return nil
 }
 
-// RSA15a - identifiable client ID should match with each other
-func notCompatible(clientId1 string, clientId2 string) bool {
-	return identifiable(clientId1, clientId2) && clientId1 != clientId2
+// RSA15a - client ID should match with each other or shouldn't be identifiable
+func compatible(clientId1 string, clientId2 string) bool {
+	return clientId1 == clientId2 || !identifiable(clientId1, clientId2)
 }
 
 func identifiable(clientIDs ...string) bool {
