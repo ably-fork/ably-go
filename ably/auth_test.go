@@ -804,6 +804,43 @@ func TestAuth_ClientID_RSA7(t *testing.T) {
 	assertNil(t, err)
 	assertEquals(t, ably.ConnectionStateFailed, client.Connection.State())
 
+	t.Run("RSA7d: tokenParams clientID should be set with provided clientID while requesting a token", func(t *testing.T) {
+
+	})
+
+	t.Run("RSA7e: when clientID is provided in clientOptions with basic auth", func(t *testing.T) {
+		t.Run("RSA7e1: for realtime clients, connect request should include clientID as querystring param", func(t *testing.T) {
+
+		})
+		t.Run("RSA7e2: for rest clients, X-Ably-ClientId header should be set with base64 encoded clientID", func(t *testing.T) {
+
+		})
+	})
+
+	t.Run("RSA7a: for identified clients", func(t *testing.T) {
+		t.Run("RSA7a1: messageID should not be set for published messages", func(t *testing.T) {
+
+		})
+		t.Run("RSA7a2: override defaultTokenParams clientID with clientOptions clientID if provided", func(t *testing.T) {
+
+		})
+	})
+
+	t.Run("RSA7b: auth clientID is set when", func(t *testing.T) {
+		t.Run("RSA7b1, RSA12b: clientID is provided in ClientOptions clientID", func(t *testing.T) {
+
+		})
+		t.Run("RSA7b2, RSA12a: tokenRequest/tokenDetails obtained has clientID", func(t *testing.T) {
+
+		})
+		t.Run("RSA7b3, RSA12a: connected ProtocolMessage#connectionDetails contains clientID", func(t *testing.T) {
+
+		})
+		t.Run("RSA7b4: tokenDetails/connectionDetails has * as wildCardClientID", func(t *testing.T) {
+
+		})
+	})
+
 	t.Run("RSA7c: error on providing wildcard clientID in clientOptions", func(t *testing.T) {
 		t.Parallel()
 		app := ablytest.MustSandbox(nil)
