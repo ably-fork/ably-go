@@ -715,6 +715,84 @@ func TestAuth_RequestToken_PublishClientID(t *testing.T) {
 
 func TestAuth_ClientID_RSA7(t *testing.T) {
 	t.Parallel()
+
+	t.Run("RSA7d: tokenParams clientID should be set with provided clientID while requesting a token", func(t *testing.T) {
+
+	})
+
+	t.Run("RSA7e: when clientID is provided in clientOptions with basic auth", func(t *testing.T) {
+		t.Run("RSA7e1: for realtime clients, connect request should include clientID as querystring param", func(t *testing.T) {
+
+		})
+		t.Run("RSA7e2: for rest clients, X-Ably-ClientId header should be set with base64 encoded clientID", func(t *testing.T) {
+
+		})
+	})
+
+	t.Run("RSA7a: for identified clients", func(t *testing.T) {
+		t.Run("RSA7a1: messageID should not be set for published messages", func(t *testing.T) {
+
+		})
+		t.Run("RSA7a2: override defaultTokenParams clientID with clientOptions clientID if provided", func(t *testing.T) {
+
+		})
+	})
+
+	t.Run("RSA7b: auth clientID is set when", func(t *testing.T) {
+		t.Run("RSA7b1, RSA12b: clientID is provided in ClientOptions clientID", func(t *testing.T) {
+
+		})
+
+		t.Run("RSA7b2, RSA12a: tokenRequest/tokenDetails obtained has clientID", func(t *testing.T) {
+
+		})
+		t.Run("RSA7b3, RSA12a: connected ProtocolMessage#connectionDetails contains clientID", func(t *testing.T) {
+			in := make(chan *ably.ProtocolMessage, 16)
+			out := make(chan *ably.ProtocolMessage, 16)
+			client, err := ably.NewRealtime(
+				ably.WithTLS(false),
+				ably.WithToken("fake:token"),
+				ably.WithUseTokenAuth(true),
+				ably.WithDial(MessagePipe(in, out)))
+			assertNil(t, err)
+
+			// prev, auth clientID is not set
+			id := client.Auth.ClientID()
+			assertEmpty(t, id)
+
+			connected := &ably.ProtocolMessage{
+				Action:       ably.ActionConnected,
+				ConnectionID: "connection-id",
+				ConnectionDetails: &ably.ConnectionDetails{
+					ClientID: "client-id",
+				},
+			}
+
+			// Ensure CONNECTED message updates clientID
+			in <- connected
+			err = ablytest.Wait(ablytest.ConnWaiter(client, client.Connect, ably.ConnectionEventConnected), nil)
+			assertNil(t, err)
+			assertEquals(t, connected.ConnectionDetails.ClientID, client.Auth.ClientID())
+		})
+
+		t.Run("RSA7b4: tokenDetails/connectionDetails has * as wildCardClientID", func(t *testing.T) {
+
+		})
+	})
+
+	t.Run("RSA7c: error on providing wildcard clientID in clientOptions", func(t *testing.T) {
+		t.Parallel()
+		app := ablytest.MustSandbox(nil)
+		defer safeclose(t, app)
+		opts := app.Options()
+		opts = append(opts, ably.WithClientID("*"))
+		_, err := ably.NewREST(opts...)
+		err = checkError(40102, err)
+		assertNil(t, err)
+	})
+}
+
+func TestAuth_RSA15(t *testing.T) {
 	in := make(chan *ably.ProtocolMessage, 16)
 	out := make(chan *ably.ProtocolMessage, 16)
 	app := ablytest.MustSandbox(nil)
@@ -722,8 +800,10 @@ func TestAuth_ClientID_RSA7(t *testing.T) {
 	opts := []ably.ClientOption{
 		ably.WithUseTokenAuth(true),
 	}
+
 	proxy := ablytest.MustAuthReverseProxy(app.Options(opts...)...)
 	defer safeclose(t, proxy)
+
 	params := &ably.TokenParams{
 		TTL: time.Second.Milliseconds(),
 	}
@@ -732,33 +812,16 @@ func TestAuth_ClientID_RSA7(t *testing.T) {
 		ably.WithUseTokenAuth(true),
 		ably.WithDial(MessagePipe(in, out)),
 		ably.WithAutoConnect(false),
+		ably.WithClientID("client1"),
 	}
+
 	client := app.NewRealtime(opts...) // no client.Close as the connection is mocked
 
+	// Mock the auth reverse proxy to return a token with non-matching ClientID
+	// via AuthURL.
 	tok, err := client.Auth.RequestToken(context.Background(), params)
 	assertNil(t, err)
 
-	proxy.TokenQueue = append(proxy.TokenQueue, tok)
-
-	tok, err = client.Auth.Authorize(context.Background(), nil)
-	assertNil(t, err)
-
-	connected := &ably.ProtocolMessage{
-		Action:       ably.ActionConnected,
-		ConnectionID: "connection-id",
-		ConnectionDetails: &ably.ConnectionDetails{
-			ClientID: "client-id",
-		},
-	}
-	// Ensure CONNECTED message changes the empty Auth.ClientID.
-	in <- connected
-	id := client.Auth.ClientID()
-	assertEmpty(t, id)
-	err = ablytest.Wait(ablytest.ConnWaiter(client, client.Connect, ably.ConnectionEventConnected), nil)
-	assertNil(t, err)
-	assertEquals(t, connected.ConnectionDetails.ClientID, client.Auth.ClientID())
-	// Mock the auth reverse proxy to return a token with non-matching ClientID
-	// via AuthURL.
 	tok.ClientID = "non-matching"
 	proxy.TokenQueue = append(proxy.TokenQueue, tok)
 
@@ -793,7 +856,14 @@ func TestAuth_ClientID_RSA7(t *testing.T) {
 		}, ably.ConnectionEventClosed), nil)
 		assertNil(t, err)
 
-		in <- connected
+		connectedMsg := &ably.ProtocolMessage{
+			Action:       ably.ActionConnected,
+			ConnectionID: "connection-id",
+			ConnectionDetails: &ably.ConnectionDetails{
+				ClientID: "client-id",
+			},
+		}
+		in <- connectedMsg
 		proxy.TokenQueue = append(proxy.TokenQueue, tok)
 		err = ablytest.Wait(ablytest.ConnWaiter(client, client.Connect,
 			ably.ConnectionEventConnected,
@@ -803,54 +873,6 @@ func TestAuth_ClientID_RSA7(t *testing.T) {
 	err = checkError(40012, err)
 	assertNil(t, err)
 	assertEquals(t, ably.ConnectionStateFailed, client.Connection.State())
-
-	t.Run("RSA7d: tokenParams clientID should be set with provided clientID while requesting a token", func(t *testing.T) {
-
-	})
-
-	t.Run("RSA7e: when clientID is provided in clientOptions with basic auth", func(t *testing.T) {
-		t.Run("RSA7e1: for realtime clients, connect request should include clientID as querystring param", func(t *testing.T) {
-
-		})
-		t.Run("RSA7e2: for rest clients, X-Ably-ClientId header should be set with base64 encoded clientID", func(t *testing.T) {
-
-		})
-	})
-
-	t.Run("RSA7a: for identified clients", func(t *testing.T) {
-		t.Run("RSA7a1: messageID should not be set for published messages", func(t *testing.T) {
-
-		})
-		t.Run("RSA7a2: override defaultTokenParams clientID with clientOptions clientID if provided", func(t *testing.T) {
-
-		})
-	})
-
-	t.Run("RSA7b: auth clientID is set when", func(t *testing.T) {
-		t.Run("RSA7b1, RSA12b: clientID is provided in ClientOptions clientID", func(t *testing.T) {
-
-		})
-		t.Run("RSA7b2, RSA12a: tokenRequest/tokenDetails obtained has clientID", func(t *testing.T) {
-
-		})
-		t.Run("RSA7b3, RSA12a: connected ProtocolMessage#connectionDetails contains clientID", func(t *testing.T) {
-
-		})
-		t.Run("RSA7b4: tokenDetails/connectionDetails has * as wildCardClientID", func(t *testing.T) {
-
-		})
-	})
-
-	t.Run("RSA7c: error on providing wildcard clientID in clientOptions", func(t *testing.T) {
-		t.Parallel()
-		app := ablytest.MustSandbox(nil)
-		defer safeclose(t, app)
-		opts := app.Options()
-		opts = append(opts, ably.WithClientID("*"))
-		_, err := ably.NewREST(opts...)
-		err = checkError(40102, err)
-		assertNil(t, err)
-	})
 }
 
 func TestAuth_CreateTokenRequest(t *testing.T) {
