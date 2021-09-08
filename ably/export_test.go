@@ -45,8 +45,9 @@ func (c *REST) Post(ctx context.Context, path string, in, out interface{}) (*htt
 }
 
 const (
-	AuthBasic = authBasic
-	AuthToken = authToken
+	AuthBasic        = authBasic
+	AuthToken        = authToken
+	WildcardClientID = wildcardClientID
 )
 
 func DecodeResp(resp *http.Response, out interface{}) error {
@@ -71,6 +72,15 @@ func (a *Auth) Method() int {
 
 func (a *Auth) Params() *TokenParams {
 	return a.params
+}
+
+func (a *Auth) ClientIdRaw() string {
+	return a.clientID
+}
+
+func (a *Auth) SetClientId(clientId string) {
+	a.updateClientID("*")
+	a.updateClientID(clientId)
 }
 
 func (a *Auth) AuthOptions() *authOptions {

@@ -744,6 +744,7 @@ func TestAuth_ClientID_RSA7(t *testing.T) {
 		t.Run("RSA7b2, RSA12a: tokenRequest/tokenDetails obtained has clientID", func(t *testing.T) {
 
 		})
+
 		t.Run("RSA7b3, RSA12a: connected ProtocolMessage#connectionDetails contains clientID", func(t *testing.T) {
 			in := make(chan *ably.ProtocolMessage, 16)
 			out := make(chan *ably.ProtocolMessage, 16)
@@ -790,11 +791,14 @@ func TestAuth_ClientID_RSA7(t *testing.T) {
 }
 
 func TestAuth_RSA15(t *testing.T) {
+	t.Parallel()
+
 	in := make(chan *ably.ProtocolMessage, 16)
 	out := make(chan *ably.ProtocolMessage, 16)
 	app := ablytest.MustSandbox(nil)
 	defer safeclose(t, app)
 
+	// Used for returning mocked tokens appended to the TokenQueue
 	proxy := ablytest.MustAuthReverseProxy(app.Options(ably.WithUseTokenAuth(true))...)
 	defer safeclose(t, proxy)
 
@@ -807,46 +811,117 @@ func TestAuth_RSA15(t *testing.T) {
 		ably.WithUseTokenAuth(true),
 		ably.WithDial(MessagePipe(in, out)),
 		ably.WithAutoConnect(false),
+		ably.WithClientID("matching"),
 	}
 
 	client := app.NewRealtime(opts...) // no client.Close as the connection is mocked
+	closeConnection := func(client *ably.Realtime, in chan *ably.ProtocolMessage) {
+		err := ablytest.Wait(ablytest.ConnWaiter(client, client.Close, ably.ConnectionEventClosing), nil)
+		assertNil(t, err)
+		err = ablytest.Wait(ablytest.ConnWaiter(client, func() {
+			closed := &ably.ProtocolMessage{
+				Action: ably.ActionClosed,
+			}
+			in <- closed
+		}, ably.ConnectionEventClosed), nil)
+		assertNil(t, err)
+	}
 
-	// Mock the auth reverse proxy to return a token with non-matching ClientID
-	// via AuthURL.
-	tok, err := client.Auth.RequestToken(context.Background(), params)
+	tokenDetails, err := client.Auth.RequestToken(context.Background(), params)
 	assertNil(t, err)
 
-	tok.ClientID = "matching"
-	proxy.TokenQueue = append(proxy.TokenQueue, tok)
+	t.Run("RSA15a, RSA7b: tokenDetails/connectionDetails should set matching non-wildcard id", func(t *testing.T) {
+		//t.Skip()
+		// append mocked token to proxy tokenQueue
+		tokenDetails.ClientID = "matching"
+		proxy.TokenQueue = append(proxy.TokenQueue, tokenDetails)
+		// Authorize will set clientID to received tokenDetails clientID
+		_, err = client.Auth.Authorize(context.Background(), nil)
+		assertNil(t, err)
+		assertEquals(t, "matching", client.Auth.ClientIdRaw())
 
-	// received and adds queued token to the client
-	_, err = client.Auth.Authorize(context.Background(), nil)
-	assertNil(t, err)
+		// Ensure CONNECTED message doesn't return error while setting clientID
+		connected := &ably.ProtocolMessage{
+			Action:       ably.ActionConnected,
+			ConnectionID: "connection-id",
+			ConnectionDetails: &ably.ConnectionDetails{
+				ClientID: "matching",
+			},
+		}
+		in <- connected
+		err = ablytest.Wait(ablytest.ConnWaiter(client, client.Connect, ably.ConnectionEventConnected), nil)
+		assertNil(t, err)
+		assertEquals(t, connected.ConnectionDetails.ClientID, client.Auth.ClientIdRaw())
+		closeConnection(client, in)
+	})
 
-	tok.ClientID = "non-matching"
-	proxy.TokenQueue = append(proxy.TokenQueue, tok)
+	t.Run("RSA15b, RSA7b:  tokenDetails/connectionDetails should set wildcard as clientID", func(t *testing.T) {
+		client.Auth.SetClientId("matching")
 
-	_, err = client.Auth.Authorize(context.Background(), nil)
-	assertErrorCode(t, 40012, err)
+		// append mocked token to proxy tokenQueue
+		tokenDetails.ClientID = ably.WildcardClientID
+		proxy.TokenQueue = append(proxy.TokenQueue, tokenDetails)
+		// Authorize will set clientID to received tokenDetails clientID
+		_, err = client.Auth.Authorize(context.Background(), nil)
+		assertNil(t, err)
+		assertEquals(t, "*", client.Auth.ClientIdRaw()) // unidentifiable clientID
 
-	err = ablytest.Wait(ablytest.AssertionWaiter(func() bool {
-		return tok.Expired(time.Now())
-	}), nil)
-	assertNil(t, err)
-	//connectedMsg := &ably.ProtocolMessage {
-	//	Action:       ably.ActionConnected,
-	//	ConnectionID: "connection-id",
-	//	ConnectionDetails: &ably.ConnectionDetails{
-	//		ClientID: "client-id",
-	//	},
-	//}
-	//
-	//in <- connectedMsg
-	proxy.TokenQueue = append(proxy.TokenQueue, tok)
-	err = ablytest.Wait(ablytest.ConnWaiter(client, client.Connect, ably.ConnectionEventFailed), nil)
+		client.Auth.SetClientId("matching")
 
-	assertErrorCode(t, 40012, err)
-	assertEquals(t, ably.ConnectionStateFailed, client.Connection.State())
+		// Ensure CONNECTED message doesn't return error while setting clientID
+		connected := &ably.ProtocolMessage{
+			Action:       ably.ActionConnected,
+			ConnectionID: "connection-id",
+			ConnectionDetails: &ably.ConnectionDetails{
+				ClientID: ably.WildcardClientID,
+			},
+		}
+		in <- connected
+		err = ablytest.Wait(ablytest.ConnWaiter(client, client.Connect, ably.ConnectionEventConnected), nil)
+		assertNil(t, err)
+		assertEquals(t, "*", client.Auth.ClientIdRaw()) // unidentifiable clientID
+		closeConnection(client, in)
+	})
+
+	t.Run("RSA15c: should return error for non-compatible tokenDetails/connectionDetails clientID, transition to failed for realtime client", func(t *testing.T) {
+		//t.Skip()
+		client.Auth.SetClientId("matching")
+		tokenDetails.ClientID = "non-matching"
+
+		// append mocked token to proxy tokenQueue
+		proxy.TokenQueue = append(proxy.TokenQueue, tokenDetails)
+
+		// for REST, return error for explicit authorize Call when non-matching clientID is returned
+		_, err = client.Auth.Authorize(context.Background(), nil)
+		assertErrorCode(t, 40012, err)
+
+		// for REALTIME, return error for non-matching clientID from connectedMsg
+		connectedMsg := &ably.ProtocolMessage{
+			Action:       ably.ActionConnected,
+			ConnectionID: "connection-id",
+			ConnectionDetails: &ably.ConnectionDetails{
+				ClientID: "non-matching",
+			},
+		}
+		in <- connectedMsg
+		err = ablytest.Wait(ablytest.ConnWaiter(client, client.Connect, ably.ConnectionEventFailed), nil)
+		assertErrorCode(t, 40012, err)
+		assertEquals(t, ably.ConnectionStateFailed, client.Connection.State())
+
+		// Proceed after token is expired, since new token will be requested from TokenQueue
+		err := ablytest.Wait(ablytest.AssertionWaiter(func() bool {
+			return tokenDetails.Expired(time.Now())
+		}), nil)
+		assertNil(t, err)
+
+		// append mocked token to proxy tokenQueue
+		proxy.TokenQueue = append(proxy.TokenQueue, tokenDetails)
+
+		// authorize called while connecting should return error
+		err = ablytest.Wait(ablytest.ConnWaiter(client, client.Connect, ably.ConnectionEventFailed), nil)
+		assertErrorCode(t, 40012, err)
+		assertEquals(t, ably.ConnectionStateFailed, client.Connection.State())
+	})
 }
 
 func TestAuth_CreateTokenRequest(t *testing.T) {
