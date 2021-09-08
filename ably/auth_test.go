@@ -365,8 +365,9 @@ func TestAuth_RSA10(t *testing.T) {
 
 func TestAuth_TokenAuth_Renew_When_Expired_RSA4b(t *testing.T) {
 	t.Parallel()
-	rec, extraOpt := recorder()
-	defer rec.Stop()
+	httpRequests, extraOpt := recorder()
+	defer httpRequests.Stop()
+
 	opts := []ably.ClientOption{ably.WithUseTokenAuth(true)}
 	app, client := ablytest.NewREST(append(opts, extraOpt...)...)
 	defer safeclose(t, app)
@@ -374,58 +375,53 @@ func TestAuth_TokenAuth_Renew_When_Expired_RSA4b(t *testing.T) {
 	params := &ably.TokenParams{
 		TTL: time.Second.Milliseconds(),
 	}
-	tok, err := client.Auth.Authorize(context.Background(), params)
-	if err != nil {
-		t.Fatalf("Authorize()=%v", err)
-	}
-	if n := rec.Len(); n != 1 {
-		t.Fatalf("want rec.Len()=1; got %d", n)
-	}
-	if ttl := tok.ExpireTime().Sub(tok.IssueTime()); ttl > 2*time.Second {
-		t.Fatalf("want ttl=1s; got %v", ttl)
-	}
-	time.Sleep(2 * time.Second) // wait till expires
+	tokenDetails, err := client.Auth.Authorize(context.Background(), params)
+	assertNil(t, err)
+	assertEquals(t, 1, httpRequests.Len())
+
+	tokenTTL := tokenDetails.ExpireTime().Sub(tokenDetails.IssueTime())
+	assertEquals(t, time.Second, tokenTTL)
+
+	// wait till token expires
+	err = ablytest.Wait(ablytest.AssertionWaiter(func() bool {
+		return tokenDetails.Expired(time.Now())
+	}), nil)
+	assertNil(t, err)
+
+	httpRequests.Reset()
+
 	_, err = client.Stats().Pages(context.Background())
-	if err != nil {
-		t.Fatalf("Stats()=%v", err)
-	}
+	assertNil(t, err)
 	// Recorded responses:
-	//
-	//   - 0: response for explicit Authorize()
 	//   - 1: response for implicit Authorize() (token renewal)
 	//   - 2: response for Stats()
-	//
-	if n := rec.Len(); n != 3 {
-		t.Fatalf("token not renewed; want rec.Len()=3; got %d", n)
-	}
-	var newTok ably.TokenDetails
-	if err := ably.DecodeResp(rec.Response(1), &newTok); err != nil {
-		t.Fatalf("token decode error: %v", err)
-	}
-	if tok.Token == newTok.Token {
-		t.Fatalf("token not renewed; new token equals old: %s", tok.Token)
-	}
+	assertEquals(t, 2, httpRequests.Len())
+
+	var newTokenDetails ably.TokenDetails
+	err = ably.DecodeResp(httpRequests.Response(0), &newTokenDetails)
+	assertNil(t, err)
+	assertNotEquals(t, tokenDetails.Token, newTokenDetails.Token)
 	// Ensure token was renewed with original params.
-	if ttl := newTok.ExpireTime().Sub(newTok.IssueTime()); ttl > 2*time.Second {
-		t.Fatalf("want ttl=1s; got %v", ttl)
-	}
-	time.Sleep(2 * time.Second) // wait for token to expire
+	tokenTTL = newTokenDetails.ExpireTime().Sub(newTokenDetails.IssueTime())
+	assertEquals(t, time.Second, tokenTTL)
+
+	// wait till token expires
+	err = ablytest.Wait(ablytest.AssertionWaiter(func() bool {
+		return tokenDetails.Expired(time.Now())
+	}), nil)
+	assertNil(t, err)
+
 	// Ensure request fails when Token or *TokenDetails is provided, but no
 	// means to renew the token
-	rec.Reset()
+	httpRequests.Reset()
 	opts = app.Options(opts...)
-	opts = append(opts, ably.WithKey(""), ably.WithTokenDetails(tok))
+	opts = append(opts, ably.WithKey(""), ably.WithTokenDetails(tokenDetails))
 	client, err = ably.NewREST(opts...)
-	if err != nil {
-		t.Fatalf("NewREST()=%v", err)
-	}
-	if _, err := client.Stats().Pages(context.Background()); err == nil {
-		t.Fatal("want err!=nil")
-	}
+	assertNil(t, err)
+	_, err = client.Stats().Pages(context.Background())
+	assertNotNil(t, err)
 	// Ensure no requests were made to Ably servers.
-	if n := rec.Len(); n != 0 {
-		t.Fatalf("want rec.Len()=0; got %d", n)
-	}
+	assertZero(t, httpRequests.Len())
 }
 
 func TestAuth_RequestToken_RSA8(t *testing.T) {
@@ -587,17 +583,6 @@ func TestAuth_RequestToken_RSA8(t *testing.T) {
 			t.Errorf("c.Stats()=%v (method=%s)", err, method)
 		}
 	}
-}
-
-func TestAuth_ClientID_Error(t *testing.T) {
-	t.Parallel()
-	opts := []ably.ClientOption{
-		ably.WithClientID("*"),
-		ably.WithKey("abc:abc"),
-		ably.WithUseTokenAuth(true),
-	}
-	_, err := ably.NewRealtime(opts...)
-	assertErrorCode(t, 40102, err)
 }
 
 func TestAuth_ReuseClientID(t *testing.T) {
@@ -781,11 +766,11 @@ func TestAuth_ClientID_RSA7(t *testing.T) {
 
 	t.Run("RSA7c: error on providing wildcard clientID in clientOptions", func(t *testing.T) {
 		t.Parallel()
-		app := ablytest.MustSandbox(nil)
-		defer safeclose(t, app)
-		opts := app.Options()
-		opts = append(opts, ably.WithClientID("*"))
-		_, err := ably.NewREST(opts...)
+		opts := []ably.ClientOption{
+			ably.WithClientID("*"),
+			ably.WithKey("abc:abc"),
+		}
+		_, err := ably.NewRealtime(opts...)
 		assertErrorCode(t, 40102, err)
 	})
 }
