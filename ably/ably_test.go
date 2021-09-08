@@ -183,6 +183,14 @@ func assertDeepEquals(t *testing.T, expected interface{}, actual interface{}) {
 	}
 }
 
+func assertErrorCode(t *testing.T, expectedErrorCode ably.ErrorCode, actualError error) {
+	t.Helper()
+	err := checkError(expectedErrorCode, actualError)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func init() {
 	ablytest.ClientOptionsInspector.UseBinaryProtocol = func(o []ably.ClientOption) bool {
 		return !ably.ApplyOptionsWithDefaults(o...).NoBinaryProtocol

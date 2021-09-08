@@ -597,9 +597,7 @@ func TestAuth_ClientID_Error(t *testing.T) {
 		ably.WithUseTokenAuth(true),
 	}
 	_, err := ably.NewRealtime(opts...)
-	if err := checkError(40102, err); err != nil {
-		t.Fatal(err)
-	}
+	assertErrorCode(t, 40102, err)
 }
 
 func TestAuth_ReuseClientID(t *testing.T) {
@@ -787,8 +785,7 @@ func TestAuth_ClientID_RSA7(t *testing.T) {
 		opts := app.Options()
 		opts = append(opts, ably.WithClientID("*"))
 		_, err := ably.NewREST(opts...)
-		err = checkError(40102, err)
-		assertNil(t, err)
+		assertErrorCode(t, 40102, err)
 	})
 }
 
@@ -797,6 +794,7 @@ func TestAuth_RSA15(t *testing.T) {
 	out := make(chan *ably.ProtocolMessage, 16)
 	app := ablytest.MustSandbox(nil)
 	defer safeclose(t, app)
+
 	opts := []ably.ClientOption{
 		ably.WithUseTokenAuth(true),
 	}
@@ -807,6 +805,7 @@ func TestAuth_RSA15(t *testing.T) {
 	params := &ably.TokenParams{
 		TTL: time.Second.Milliseconds(),
 	}
+
 	opts = []ably.ClientOption{
 		ably.WithAuthURL(proxy.URL("details")),
 		ably.WithUseTokenAuth(true),
@@ -826,8 +825,7 @@ func TestAuth_RSA15(t *testing.T) {
 	proxy.TokenQueue = append(proxy.TokenQueue, tok)
 
 	_, err = client.Auth.Authorize(context.Background(), nil)
-	err = checkError(40012, err)
-	assertNil(t, err)
+	assertErrorCode(t, 40012, err)
 	// After the current token expires, reconnecting should request a new token
 	// from authURL. Make it return the token with the mismatched client ID, and
 	// expect a transition to FAILED.
@@ -854,6 +852,7 @@ func TestAuth_RSA15(t *testing.T) {
 			}
 			in <- closed
 		}, ably.ConnectionEventClosed), nil)
+
 		assertNil(t, err)
 
 		connectedMsg := &ably.ProtocolMessage{
@@ -863,6 +862,7 @@ func TestAuth_RSA15(t *testing.T) {
 				ClientID: "client-id",
 			},
 		}
+
 		in <- connectedMsg
 		proxy.TokenQueue = append(proxy.TokenQueue, tok)
 		err = ablytest.Wait(ablytest.ConnWaiter(client, client.Connect,
@@ -870,8 +870,7 @@ func TestAuth_RSA15(t *testing.T) {
 			ably.ConnectionEventFailed,
 		), nil)
 	}
-	err = checkError(40012, err)
-	assertNil(t, err)
+	assertErrorCode(t, 40012, err)
 	assertEquals(t, ably.ConnectionStateFailed, client.Connection.State())
 }
 
