@@ -81,6 +81,10 @@ func (a *Auth) SetServerTimeFunc(st func() (time.Time, error)) {
 	a.serverTimeHandler = st
 }
 
+func (tok *TokenDetails) Expired(now time.Time) bool {
+	return tok.expired(now)
+}
+
 func (c *REST) Timestamp(query bool) (time.Time, error) {
 	return c.Auth.timestamp(context.Background(), query)
 }

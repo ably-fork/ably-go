@@ -795,23 +795,18 @@ func TestAuth_RSA15(t *testing.T) {
 	app := ablytest.MustSandbox(nil)
 	defer safeclose(t, app)
 
-	opts := []ably.ClientOption{
-		ably.WithUseTokenAuth(true),
-	}
-
-	proxy := ablytest.MustAuthReverseProxy(app.Options(opts...)...)
+	proxy := ablytest.MustAuthReverseProxy(app.Options(ably.WithUseTokenAuth(true))...)
 	defer safeclose(t, proxy)
 
 	params := &ably.TokenParams{
 		TTL: time.Second.Milliseconds(),
 	}
 
-	opts = []ably.ClientOption{
+	opts := []ably.ClientOption{
 		ably.WithAuthURL(proxy.URL("details")),
 		ably.WithUseTokenAuth(true),
 		ably.WithDial(MessagePipe(in, out)),
 		ably.WithAutoConnect(false),
-		ably.WithClientID("client1"),
 	}
 
 	client := app.NewRealtime(opts...) // no client.Close as the connection is mocked
@@ -821,55 +816,35 @@ func TestAuth_RSA15(t *testing.T) {
 	tok, err := client.Auth.RequestToken(context.Background(), params)
 	assertNil(t, err)
 
+	tok.ClientID = "matching"
+	proxy.TokenQueue = append(proxy.TokenQueue, tok)
+
+	// received and adds queued token to the client
+	_, err = client.Auth.Authorize(context.Background(), nil)
+	assertNil(t, err)
+
 	tok.ClientID = "non-matching"
 	proxy.TokenQueue = append(proxy.TokenQueue, tok)
 
 	_, err = client.Auth.Authorize(context.Background(), nil)
 	assertErrorCode(t, 40012, err)
-	// After the current token expires, reconnecting should request a new token
-	// from authURL. Make it return the token with the mismatched client ID, and
-	// expect a transition to FAILED.
 
-	time.Sleep(time.Duration(params.TTL) * time.Millisecond)
-	tokenExpiredAt := time.Now()
+	err = ablytest.Wait(ablytest.AssertionWaiter(func() bool {
+		return tok.Expired(time.Now())
+	}), nil)
+	assertNil(t, err)
+	//connectedMsg := &ably.ProtocolMessage {
+	//	Action:       ably.ActionConnected,
+	//	ConnectionID: "connection-id",
+	//	ConnectionDetails: &ably.ConnectionDetails{
+	//		ClientID: "client-id",
+	//	},
+	//}
+	//
+	//in <- connectedMsg
+	proxy.TokenQueue = append(proxy.TokenQueue, tok)
+	err = ablytest.Wait(ablytest.ConnWaiter(client, client.Connect, ably.ConnectionEventFailed), nil)
 
-	// Allow some extra time for the server to reject our token.
-	tokenErrorDeadline := tokenExpiredAt.Add(5 * time.Second)
-
-	// Close and reconnect with the expired token, until we get an error.
-	// Expiration deadlines are inexact, so this may take a few tries until the
-	// token is effectively expired.
-	err = nil
-	for err == nil && time.Now().Before(tokenErrorDeadline) {
-		time.Sleep(100 * time.Millisecond)
-
-		err = ablytest.Wait(ablytest.ConnWaiter(client, client.Close, ably.ConnectionEventClosing), nil)
-		assertNil(t, err)
-
-		err = ablytest.Wait(ablytest.ConnWaiter(client, func() {
-			closed := &ably.ProtocolMessage{
-				Action: ably.ActionClosed,
-			}
-			in <- closed
-		}, ably.ConnectionEventClosed), nil)
-
-		assertNil(t, err)
-
-		connectedMsg := &ably.ProtocolMessage{
-			Action:       ably.ActionConnected,
-			ConnectionID: "connection-id",
-			ConnectionDetails: &ably.ConnectionDetails{
-				ClientID: "client-id",
-			},
-		}
-
-		in <- connectedMsg
-		proxy.TokenQueue = append(proxy.TokenQueue, tok)
-		err = ablytest.Wait(ablytest.ConnWaiter(client, client.Connect,
-			ably.ConnectionEventConnected,
-			ably.ConnectionEventFailed,
-		), nil)
-	}
 	assertErrorCode(t, 40012, err)
 	assertEquals(t, ably.ConnectionStateFailed, client.Connection.State())
 }
