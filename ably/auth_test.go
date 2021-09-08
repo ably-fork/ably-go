@@ -82,6 +82,18 @@ func TestAuth_BasicAuth(t *testing.T) {
 	}
 }
 
+func TestAuth_TokenAuth_RSA3(t *testing.T) {
+	t.Run("RSA3a: Can be used over HTTP or HTTPs", func(t *testing.T) {
+
+	})
+	t.Run("RSA3b: For REST requests, token is based64 encoded and set as Authorization: Bearer header", func(t *testing.T) {
+
+	})
+	t.Run("RSA3c: For realtime websocket connection, the queryString param accessToken is appended to the URL endpoint", func(t *testing.T) {
+
+	})
+}
+
 func TestAuth_TokenAuth_RSA5(t *testing.T) {
 	t.Parallel()
 	httpRequests, extraOpt := recorder()
@@ -138,6 +150,16 @@ func TestAuth_TokenAuth_RSA5(t *testing.T) {
 	now = now.Add(60 * time.Minute)
 	err = timeWithin(tok.ExpireTime(), beforeAuth, now)
 	assertNil(t, err)
+}
+
+func TestAuth_TokenAuth_RSA6(t *testing.T) {
+	t.Run("Capability for a new token is JSON stringified as per tokenParam capabilities", func(t *testing.T) {
+
+	})
+
+	t.Run("Token default capability is equivalent to underlying key capabilities", func(t *testing.T) {
+
+	})
 }
 
 func TestAuth_RSA10(t *testing.T) {
@@ -711,11 +733,11 @@ func TestAuth_ClientID_RSA7(t *testing.T) {
 				ably.WithClientID("rocky"),
 				ably.WithKey("abc:abc"),
 			}
-			restClient , err := ably.NewREST(opts...)
+			restClient, err := ably.NewREST(opts...)
 			assertNil(t, err)
 			assertEquals(t, "rocky", restClient.Auth.ClientIdRaw())
 
-			realtimeClient , err := ably.NewRealtime(opts...)
+			realtimeClient, err := ably.NewRealtime(opts...)
 			assertNil(t, err)
 			assertEquals(t, "rocky", realtimeClient.Auth.ClientIdRaw())
 		})
@@ -764,12 +786,34 @@ func TestAuth_ClientID_RSA7(t *testing.T) {
 			ably.WithClientID("*"),
 			ably.WithKey("abc:abc"),
 		}
-		_ , err := ably.NewREST(opts...)
+		_, err := ably.NewREST(opts...)
 		assertErrorCode(t, 40102, err)
 
 		_, err = ably.NewRealtime(opts...)
 		assertErrorCode(t, 40102, err)
 	})
+}
+
+func TestAuth_RSA14_ErrorOn_UseTokenAuth_With_NoKey(t *testing.T) {
+	opts := []ably.ClientOption{
+		ably.WithUseTokenAuth(true),
+		ably.WithKey(""),
+	}
+	_, err := ably.NewREST(opts...)
+	assertErrorCode(t, 40101, err)
+
+	_, err = ably.NewRealtime(opts...)
+	assertErrorCode(t, 40101, err)
+
+	opts = []ably.ClientOption{
+		ably.WithUseTokenAuth(true),
+		ably.WithKey(":"),
+	}
+	_, err = ably.NewREST(opts...)
+	assertErrorCode(t, 40102, err)
+
+	_, err = ably.NewRealtime(opts...)
+	assertErrorCode(t, 40102, err)
 }
 
 func TestAuth_RSA15(t *testing.T) {
