@@ -478,8 +478,8 @@ func (a *Auth) newError(code ErrorCode, err error) error {
 	return newError(code, err)
 }
 
-//setHttpAuthRequestHeader - Depending on the authentication scheme, HTTP header has either basic key:secret/username:password or bearer token authentication
-func (a *Auth) setHttpAuthRequestHeader(req *http.Request) error {
+//setHttpRequestAuthHeader - Depending on the authentication scheme, HTTP header has either basic key:secret/username:password or bearer token authentication
+func (a *Auth) setHttpRequestAuthHeader(req *http.Request) error {
 	switch a.method {
 	case authBasic: // RSA11
 		req.SetBasicAuth(a.opts().KeyName(), a.opts().KeySecret())
@@ -493,8 +493,8 @@ func (a *Auth) setHttpAuthRequestHeader(req *http.Request) error {
 	return nil
 }
 
-//setRealtimeAuthQueryParams - (RTN2e) Depending on the authentication scheme, realtime connection params has either accessToken containing token string, or key containing the API key
-func (a *Auth) setRealtimeAuthQueryParams(ctx context.Context, query url.Values) error {
+//setRealtimeConnectionQueryAuthParams - (RTN2e) Depending on the authentication scheme, realtime connection params has either accessToken containing token string, or key containing the API key
+func (a *Auth) setRealtimeConnectionQueryAuthParams(ctx context.Context, query url.Values) error {
 	a.mtx.Lock()
 	defer a.mtx.Unlock()
 	switch a.method {

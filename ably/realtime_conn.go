@@ -247,7 +247,7 @@ func (c *Connection) params(mode connectionMode) (url.Values, error) {
 	for k, v := range c.opts.TransportParams {
 		query[k] = v
 	}
-	if err := c.auth.setRealtimeAuthQueryParams(context.Background(), query); err != nil {
+	if err := c.auth.setRealtimeConnectionQueryAuthParams(context.Background(), query); err != nil {
 		return nil, err
 	}
 	switch mode {
