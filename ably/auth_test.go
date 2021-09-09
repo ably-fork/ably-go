@@ -5,12 +5,16 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ably/ably-go/ably/internal/ablyutil"
 
 	"github.com/ably/ably-go/ably"
 	"github.com/ably/ably-go/ablytest"
@@ -704,7 +708,76 @@ func TestAuth_RequestToken_PublishClientID(t *testing.T) {
 func TestAuth_ClientID_RSA7(t *testing.T) {
 	t.Parallel()
 
+	httpServer := func() (server *httptest.Server, requests func() []*http.Request, reset func()) {
+		var recordedRequests []*http.Request
+		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == "POST" {
+				buffer, err := ioutil.ReadAll(r.Body)
+				assertNil(t, err)
+				tokenRequest := &ably.TokenRequest{}
+				err = ablyutil.UnmarshalMsgpack(buffer, tokenRequest)
+				assertNil(t, err)
+				r.Header.Set("postClientId", tokenRequest.ClientID)
+			}
+			recordedRequests = append(recordedRequests, r)
+			w.WriteHeader(http.StatusForbidden) // return client error for avoiding fallbacks
+		}))
+		requests = func() []*http.Request {
+			return recordedRequests
+		}
+		reset = func() {
+			recordedRequests = nil
+		}
+		return
+	}
+
 	t.Run("RSA7d: tokenParams clientID should be set with provided clientID while requesting a token", func(t *testing.T) {
+		t.Parallel()
+		commonOpts := []ably.ClientOption{
+			ably.WithEnvironment(ablytest.Environment),
+			ably.WithTLS(false),
+			ably.WithUseTokenAuth(true),
+			ably.WithClientID("go-client"),
+		}
+		// 1. Requesting a token using callback
+		var recordedClientId string
+		opts := append(commonOpts, ably.WithAuthCallback(func(ctx context.Context, params ably.TokenParams) (ably.Tokener, error) {
+			recordedClientId = params.ClientID
+			return ably.TokenString("fake:token"), nil
+		}))
+		client, err := ably.NewREST(opts...)
+		assertNil(t, err)
+		// requesting a token should include provided clientId as query param
+		client.Auth.RequestToken(context.Background(), nil)
+		assertEquals(t, "go-client", recordedClientId)
+
+		// 2. Requesting token using authUrl
+		server, requests, reset := httpServer()
+		defer server.Close()
+		serverURL, err := url.Parse(server.URL)
+		assertNil(t, err)
+
+		opts = append(commonOpts, ably.WithAuthURL(serverURL.String()))
+		client, err = ably.NewREST(opts...)
+		assertNil(t, err)
+		// requesting a token should include provided clientId as query param
+		client.Auth.RequestToken(context.Background(), nil)
+
+		assertEquals(t, 1, len(requests()))
+		assertEquals(t, "go-client", requests()[0].URL.Query().Get("clientId"))
+		reset()
+
+		// 3. Requesting token a provided key
+		assertNil(t, err)
+		opts = append(commonOpts, ably.WithKey("fake:key"),
+			ably.WithHTTPClient(newHTTPClientMock(server)))
+		client, err = ably.NewREST(opts...)
+		assertNil(t, err)
+		// requesting a token should include provided clientId as query param
+		client.Auth.RequestToken(context.Background(), nil)
+		assertEquals(t, 1, len(requests()))
+		assertEquals(t, "go-client", requests()[0].Header.Get("postClientId"))
+		reset()
 
 	})
 
