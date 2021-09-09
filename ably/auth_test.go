@@ -88,14 +88,79 @@ func TestAuth_BasicAuth(t *testing.T) {
 }
 
 func TestAuth_TokenAuth_RSA3(t *testing.T) {
+	httpServer := func() (server *httptest.Server, requests func() []*http.Request) {
+		var recordedRequests []*http.Request
+		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			recordedRequests = append(recordedRequests, r)
+			w.WriteHeader(http.StatusForbidden) // return client error for avoiding fallbacks
+		}))
+		requests = func() []*http.Request {
+			return recordedRequests
+		}
+		return
+	}
+
+	commonOpts := []ably.ClientOption{
+		ably.WithEnvironment(ablytest.Environment),
+		ably.WithTLS(false),
+		ably.WithUseTokenAuth(true),
+		ably.WithToken("fake:token"),
+	}
+
 	t.Run("RSA3a: Can be used over HTTP or HTTPs", func(t *testing.T) {
+		// No error with TLS false
+		_, err := ably.NewREST(commonOpts...)
+		assertNil(t, err)
+		_, err = ably.NewRealtime(commonOpts...)
+		assertNil(t, err)
 
+		// No error with TLS true
+		opts := append(commonOpts, ably.WithTLS(true))
+		_, err = ably.NewREST(opts...)
+		assertNil(t, err)
+		_, err = ably.NewRealtime(opts...)
+		assertNil(t, err)
 	})
+
 	t.Run("RSA3b: For REST requests, token is based64 encoded and set as Authorization: Bearer header", func(t *testing.T) {
+		server, requests := httpServer()
+		defer server.Close()
 
+		opts := append(commonOpts, ably.WithHTTPClient(newHTTPClientMock(server)))
+		client, err := ably.NewREST(opts...)
+		assertNil(t, err)
+
+		// Make sure token auth is selected
+		assertEquals(t, ably.AuthToken, client.Auth.Method())
+
+		testChannel := client.Channels.Get("testChannel")
+		err = testChannel.Publish(context.Background(), "event", "data")
+		assertNotNil(t, err)
+		assertEquals(t, 1, len(requests()))
+
+		encodedToken := base64.StdEncoding.EncodeToString([]byte("fake:token"))
+		assertEquals(t, "Bearer "+encodedToken, requests()[0].Header.Get("Authorization"))
 	})
-	t.Run("RSA3c: For realtime websocket connection, the queryString param accessToken is appended to the URL endpoint", func(t *testing.T) {
 
+	t.Run("RSA3c: For realtime websocket connection, the queryString param accessToken is appended to the URL endpoint", func(t *testing.T) {
+		server, requests := httpServer()
+		defer server.Close()
+		serverURL, err := url.Parse(server.URL)
+		assertNil(t, err)
+		serverPort, err := strconv.Atoi(serverURL.Port())
+		assertNil(t, err)
+
+		opts := append(commonOpts, ably.WithRealtimeHost(serverURL.Hostname()), ably.WithPort(serverPort))
+		client, err := ably.NewRealtime(opts...)
+		assertNil(t, err)
+		defer client.Close()
+
+		// Make sure token auth is selected
+		assertEquals(t, ably.AuthToken, client.Auth.Method())
+
+		ablytest.Wait(ablytest.ConnWaiter(client, client.Connect, ably.ConnectionEventDisconnected), nil)
+		assertEquals(t, 1, len(requests()))
+		assertEquals(t, "fake:token", requests()[0].URL.Query().Get("accessToken"))
 	})
 }
 
