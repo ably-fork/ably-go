@@ -740,49 +740,54 @@ func TestAuth_ClientID_RSA7(t *testing.T) {
 			ably.WithUseTokenAuth(true),
 			ably.WithClientID("go-client"),
 		}
-		// 1. Requesting a token using callback
-		var recordedClientId string
-		opts := append(commonOpts, ably.WithAuthCallback(func(ctx context.Context, params ably.TokenParams) (ably.Tokener, error) {
-			recordedClientId = params.ClientID
-			return ably.TokenString("fake:token"), nil
-		}))
-		client, err := ably.NewREST(opts...)
-		assertNil(t, err)
-		// requesting a token should include provided clientId as query param
-		client.Auth.RequestToken(context.Background(), nil)
-		assertEquals(t, "go-client", recordedClientId)
+		t.Run("1. Requesting a token using callback", func(t *testing.T) {
+			t.Parallel()
+			var recordedClientId string
+			opts := append(commonOpts, ably.WithAuthCallback(func(ctx context.Context, params ably.TokenParams) (ably.Tokener, error) {
+				recordedClientId = params.ClientID
+				return ably.TokenString("fake:token"), nil
+			}))
+			client, err := ably.NewREST(opts...)
+			assertNil(t, err)
+			// requesting a token should include provided clientId as query param
+			client.Auth.RequestToken(context.Background(), nil)
+			assertEquals(t, "go-client", recordedClientId)
+		})
 
-		// 2. Requesting token using authUrl
-		server, requests, reset := httpServer()
-		defer server.Close()
-		serverURL, err := url.Parse(server.URL)
-		assertNil(t, err)
+		t.Run("2. Requesting token using authUrl", func(t *testing.T) {
+			t.Parallel()
+			server, requests, _ := httpServer()
+			defer server.Close()
+			serverURL, err := url.Parse(server.URL)
+			assertNil(t, err)
 
-		opts = append(commonOpts, ably.WithAuthURL(serverURL.String()))
-		client, err = ably.NewREST(opts...)
-		assertNil(t, err)
-		// requesting a token should include provided clientId as query param
-		client.Auth.RequestToken(context.Background(), nil)
+			opts := append(commonOpts, ably.WithAuthURL(serverURL.String()))
+			client, err := ably.NewREST(opts...)
+			assertNil(t, err)
+			// requesting a token should include provided clientId as query param
+			client.Auth.RequestToken(context.Background(), nil)
 
-		assertEquals(t, 1, len(requests()))
-		assertEquals(t, "go-client", requests()[0].URL.Query().Get("clientId"))
-		reset()
+			assertEquals(t, 1, len(requests()))
+			assertEquals(t, "go-client", requests()[0].URL.Query().Get("clientId"))
+		})
 
-		// 3. Requesting token a provided key
-		assertNil(t, err)
-		opts = append(commonOpts, ably.WithKey("fake:key"),
-			ably.WithHTTPClient(newHTTPClientMock(server)))
-		client, err = ably.NewREST(opts...)
-		assertNil(t, err)
-		// requesting a token should include provided clientId as query param
-		client.Auth.RequestToken(context.Background(), nil)
-		assertEquals(t, 1, len(requests()))
-		assertEquals(t, "go-client", requests()[0].Header.Get("postClientId"))
-		reset()
+		t.Run("3. Requesting token a provided key", func(t *testing.T) {
+			t.Parallel()
+			server, requests, _ := httpServer()
+			defer server.Close()
+
+			opts := append(commonOpts, ably.WithKey("fake:key"), ably.WithHTTPClient(newHTTPClientMock(server)))
+			client, err := ably.NewREST(opts...)
+			assertNil(t, err)
+			// requesting a token should include provided clientId as query param
+			client.Auth.RequestToken(context.Background(), nil)
+			assertEquals(t, 1, len(requests()))
+			assertEquals(t, "go-client", requests()[0].Header.Get("postClientId"))
+		})
 	})
 
 	t.Run("RSA7e: when clientID is provided in clientOptions with basic auth", func(t *testing.T) {
-
+		t.Parallel()
 		// basic auth with key provided
 		commonOpts := []ably.ClientOption{
 			ably.WithEnvironment(ablytest.Environment),
@@ -793,6 +798,7 @@ func TestAuth_ClientID_RSA7(t *testing.T) {
 		}
 
 		t.Run("RSA7e1: for realtime clients, connect request should include clientID as querystring param", func(t *testing.T) {
+			t.Parallel()
 			server, requests, _ := httpServer()
 			defer server.Close()
 			serverURL, err := url.Parse(server.URL)
@@ -816,6 +822,7 @@ func TestAuth_ClientID_RSA7(t *testing.T) {
 		})
 
 		t.Run("RSA7e2: for rest clients, X-Ably-ClientId header should be set with base64 encoded clientID", func(t *testing.T) {
+			t.Parallel()
 			server, requests, _ := httpServer()
 			defer server.Close()
 
