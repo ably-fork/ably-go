@@ -843,11 +843,74 @@ func TestAuth_ClientID_RSA7(t *testing.T) {
 	})
 
 	t.Run("RSA7a: for identified clients", func(t *testing.T) {
+		t.Parallel()
+		commonOpts := []ably.ClientOption{
+			ably.WithEnvironment(ablytest.Environment),
+			ably.WithTLS(false),
+			ably.WithUseTokenAuth(true),
+			ably.WithAutoConnect(false),
+			ably.WithClientID("go-client"),
+		}
+
 		t.Run("RSA7a1: non-compatible messageID should not be set for published messages", func(t *testing.T) {
+			t.Parallel()
+			publishErrMsg := "unable to publish message containing a clientId (ably-client) " +
+				"that is incompatible with the library clientId (go-client)"
+			messages := []*ably.Message{
+				{
+					ID:       "id1",
+					ClientID: "go-client",
+					Name:     "event1",
+					Data:     "data1",
+				}, {
+					ID:       "id2",
+					ClientID: "ably-client",
+					Name:     "event2",
+					Data:     "data3",
+				},
+			}
 
+			t.Run("For REST publish", func(t *testing.T) {
+				t.Parallel()
+				opts := append(commonOpts, ably.WithToken("fake:token"))
+				client, err := ably.NewREST(opts...)
+				assertNil(t, err)
+				channel := client.Channels.Get("testChannel")
+				err = channel.PublishMultiple(context.Background(), messages)
+				assertNotNil(t, err)
+				assertTrue(t, strings.Contains(err.Error(), publishErrMsg))
+			})
+
+			t.Run("For Realtime publish", func(t *testing.T) {
+				t.Parallel()
+				opts := append(commonOpts, ably.WithToken("fake:token"))
+				client, err := ably.NewRealtime(opts...)
+				assertNil(t, err)
+				channel := client.Channels.Get("testChannel")
+				err = channel.PublishMultiple(context.Background(), messages)
+				assertNotNil(t, err)
+				assertTrue(t, strings.Contains(err.Error(), publishErrMsg))
+			})
 		})
-		t.Run("RSA7a2: override defaultTokenParams clientID with clientOptions clientID if provided", func(t *testing.T) {
 
+		t.Run("RSA7a4: override defaultTokenParams clientID with clientOptions clientID if provided", func(t *testing.T) {
+			t.Parallel()
+			var recordedClientId string
+			opts := append(commonOpts,
+				ably.WithDefaultTokenParams(ably.TokenParams{
+					ClientID:  "ably-client",
+					Timestamp: 0,
+				}),
+				ably.WithAuthCallback(func(ctx context.Context, params ably.TokenParams) (ably.Tokener, error) {
+					recordedClientId = params.ClientID
+					return ably.TokenString("fake:token"), nil
+				}))
+			client, err := ably.NewREST(opts...)
+			assertNil(t, err)
+			// tokenParams should retain original clientID overriding default tokenParams clientID
+			client.Auth.RequestToken(context.Background(), nil)
+			assertNotEquals(t, "ably-client", recordedClientId)
+			assertEquals(t, "go-client", recordedClientId)
 		})
 	})
 

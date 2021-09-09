@@ -80,6 +80,13 @@ func PublishMultipleWithParams(params map[string]string) PublishMultipleOption {
 
 // PublishMultipleWithOptions is PublishMultiple with optional parameters.
 func (c *RESTChannel) PublishMultipleWithOptions(ctx context.Context, messages []*Message, options ...PublishMultipleOption) error {
+	authClientId := c.client.Auth.clientIDForMsgCheck()
+	for _, message := range messages {
+		if !isMsgClientIDAllowed(authClientId, message.ClientID) {
+			// Spec RSL1g3,RSL1g4, RSA7a1
+			return fmt.Errorf("unable to publish message containing a clientId (%s) that is incompatible with the library clientId (%s)", message.ClientID, authClientId)
+		}
+	}
 	var publishOpts publishMultipleOptions
 	for _, o := range options {
 		o(&publishOpts)
