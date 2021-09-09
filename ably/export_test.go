@@ -107,6 +107,14 @@ func (c *REST) GetCachedFallbackHost() string {
 	return c.successFallbackHost.get()
 }
 
+func (c *Realtime) DisableTLS() {
+	c.opts().NoTLS = true
+}
+
+func (c *REST) DisableTLS() {
+	c.opts.NoTLS = true
+}
+
 func (c *RealtimeChannel) GetAttachResume() bool {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
@@ -219,10 +227,11 @@ const (
 	DefaultCipherAlgorithm = defaultCipherAlgorithm
 	DefaultCipherMode      = defaultCipherMode
 
-	LibraryString     = libraryString
-	AblyVersionHeader = ablyVersionHeader
-	AblyVersion       = ablyVersion
-	AblyLibHeader     = ablyLibHeader
+	LibraryString      = libraryString
+	AblyVersionHeader  = ablyVersionHeader
+	AblyVersion        = ablyVersion
+	AblyLibHeader      = ablyLibHeader
+	AblyClientIDHeader = ablyClientIDHeader
 
 	EncUTF8   = encUTF8
 	EncJSON   = encJSON

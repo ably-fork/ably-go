@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -778,15 +779,59 @@ func TestAuth_ClientID_RSA7(t *testing.T) {
 		assertEquals(t, 1, len(requests()))
 		assertEquals(t, "go-client", requests()[0].Header.Get("postClientId"))
 		reset()
-
 	})
 
 	t.Run("RSA7e: when clientID is provided in clientOptions with basic auth", func(t *testing.T) {
+
+		// basic auth with key provided
+		commonOpts := []ably.ClientOption{
+			ably.WithEnvironment(ablytest.Environment),
+			ably.WithKey("fake:key"),
+			ably.WithTLS(true),
+			ably.WithAutoConnect(false),
+			ably.WithClientID("go-client"),
+		}
+
 		t.Run("RSA7e1: for realtime clients, connect request should include clientID as querystring param", func(t *testing.T) {
+			server, requests, _ := httpServer()
+			defer server.Close()
+			serverURL, err := url.Parse(server.URL)
+			assertNil(t, err)
+			serverPort, err := strconv.Atoi(serverURL.Port())
+			assertNil(t, err)
 
+			opts := append(commonOpts, ably.WithRealtimeHost(serverURL.Hostname()), ably.WithPort(serverPort))
+			client, err := ably.NewRealtime(opts...)
+			assertNil(t, err)
+			defer client.Close()
+
+			// make sure basic auth is selected
+			assertEquals(t, ably.AuthBasic, client.Auth.Method())
+			// disable TLS in order to have connection with local HTTP mock server
+			client.DisableTLS()
+
+			ablytest.Wait(ablytest.ConnWaiter(client, client.Connect, ably.ConnectionEventDisconnected), nil)
+			assertEquals(t, 1, len(requests()))
+			assertEquals(t, "go-client", requests()[0].URL.Query().Get("clientId"))
 		})
-		t.Run("RSA7e2: for rest clients, X-Ably-ClientId header should be set with base64 encoded clientID", func(t *testing.T) {
 
+		t.Run("RSA7e2: for rest clients, X-Ably-ClientId header should be set with base64 encoded clientID", func(t *testing.T) {
+			server, requests, _ := httpServer()
+			defer server.Close()
+
+			opts := append(commonOpts, ably.WithHTTPClient(newHTTPClientMock(server)))
+			client, err := ably.NewREST(opts...)
+			assertNil(t, err)
+			// make sure basic auth is selected
+			assertEquals(t, ably.AuthBasic, client.Auth.Method())
+			// disable TLS in order to have connection with local HTTP mock server
+			client.DisableTLS()
+
+			client.Time(context.Background())
+			assertEquals(t, 1, len(requests()))
+
+			encodedClientId := base64.StdEncoding.EncodeToString([]byte("go-client"))
+			assertEquals(t, encodedClientId, requests()[0].Header.Get(ably.AblyClientIDHeader))
 		})
 	})
 
