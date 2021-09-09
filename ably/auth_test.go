@@ -931,7 +931,7 @@ func TestAuth_ClientID_RSA7(t *testing.T) {
 		})
 
 		t.Run("RSA7b2, RSA12a: tokenRequest/tokenDetails obtained has clientID", func(t *testing.T) {
-
+			t.Skip("Covered as a part of RSA15a test")
 		})
 
 		t.Run("RSA7b3, RSA12a: connected ProtocolMessage#connectionDetails contains clientID", func(t *testing.T) {
@@ -964,7 +964,7 @@ func TestAuth_ClientID_RSA7(t *testing.T) {
 		})
 
 		t.Run("RSA7b4: tokenDetails/connectionDetails has * as wildCardClientID", func(t *testing.T) {
-
+			t.Skip("Covered as a part of RSA15b test")
 		})
 	})
 
